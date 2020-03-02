@@ -14,14 +14,14 @@ import (
 
 const cityCount = 4079
 
-type City struct {
+type city struct {
 	Name        string
 	CountryCode string
 	District    string
 	Population  int32
 }
 
-func (City) TableName() string {
+func (city) TableName() string {
 	return "city"
 }
 
@@ -45,21 +45,17 @@ func connString() string {
 		host, port, user, dbname, password)
 }
 
-func sql_query(b *testing.B) {
-	db, err := sql.Open("postgres", connString())
-	panicIf(err)
-	defer db.Close()
-
+func sqlQuery(db *sql.DB) {
 	query := "SELECT name, country_code, district, population FROM city"
 	rows, err := db.Query(query)
 	panicIf(err)
 
-	cities := make([]City, 0)
+	cities := make([]city, 0)
 	for rows.Next() {
-		var city City
-		err = rows.Scan(&city.Name, &city.CountryCode, &city.District, &city.Population)
+		var c city
+		err = rows.Scan(&c.Name, &c.CountryCode, &c.District, &c.Population)
 		panicIf(err)
-		cities = append(cities, city)
+		cities = append(cities, c)
 	}
 
 	if len(cities) != cityCount {
@@ -67,22 +63,18 @@ func sql_query(b *testing.B) {
 	}
 }
 
-func pgx_query(b *testing.B) {
-	conn, err := pgx.Connect(context.Background(), connString())
-	panicIf(err)
-	defer conn.Close(context.Background())
-
+func pgxQuery(conn *pgx.Conn) {
 	query := "SELECT name, country_code, district, population FROM city"
 	rows, err := conn.Query(context.Background(), query)
 	panicIf(err)
 	defer rows.Close()
 
-	cities := make([]City, 0)
+	cities := make([]city, 0)
 	for rows.Next() {
-		var city City
-		err = rows.Scan(&city.Name, &city.CountryCode, &city.District, &city.Population)
+		var c city
+		err = rows.Scan(&c.Name, &c.CountryCode, &c.District, &c.Population)
 		panicIf(err)
-		cities = append(cities, city)
+		cities = append(cities, c)
 	}
 
 	if len(cities) != cityCount {
@@ -90,13 +82,9 @@ func pgx_query(b *testing.B) {
 	}
 }
 
-func gorm_query(b *testing.B) {
-	db, err := gorm.Open("postgres", connString())
-	panicIf(err)
-	defer db.Close()
-
-	var cities []City
-	err = db.Find(&cities).Error
+func gormQuery(db *gorm.DB) {
+	var cities []city
+	err := db.Find(&cities).Error
 	panicIf(err)
 
 	if len(cities) != cityCount {
@@ -110,8 +98,38 @@ func panicIf(err error) {
 	}
 }
 
-func main() {
-	fmt.Println("pgx: ", testing.Benchmark(pgx_query))
-	fmt.Println("sql: ", testing.Benchmark(sql_query))
-	fmt.Println("gorm:", testing.Benchmark(gorm_query))
+func BenchmarkSqlQuery(b *testing.B) {
+	db, err := sql.Open("postgres", connString())
+	panicIf(err)
+	defer db.Close()
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		sqlQuery(db)
+	}
+}
+
+func BenchmarkPgxQuery(b *testing.B) {
+	conn, err := pgx.Connect(context.Background(), connString())
+	panicIf(err)
+	defer conn.Close(context.Background())
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		pgxQuery(conn)
+	}
+}
+
+func BenchmarkGormQuery(b *testing.B) {
+	db, err := gorm.Open("postgres", connString())
+	panicIf(err)
+	defer db.Close()
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		gormQuery(db)
+	}
 }
